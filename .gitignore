@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Node
+node_modules/
+dist/
+
+# Tauri
+src-tauri/target/
+
+# Models (large files, downloaded at runtime)
+models/
+*.gguf
+*.bin
+
+# Environment
+.env
+.env.local
+
+# macOS
+.DS_Store
+*.swp
+
+# IDE
+.vscode/
+.idea/
+
+# Sample/confidential files
+Sample Patent*/
+*.mp4
+
+# Build artifacts
+audio-helper/.build/
+audio-helper/AudioCapture
+sidecar/dist/
+tsconfig.tsbuildinfo
+dist/
