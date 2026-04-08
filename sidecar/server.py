@@ -247,7 +247,11 @@ async def handle_ws_message(ws: WebSocket, msg: dict) -> None:
         })
 
     elif msg_type == "start_audio_monitor":
-        pass  # Disabled — was causing Swift process accumulation and crashes
+        await asyncio.get_event_loop().run_in_executor(None, lambda: start_audio_monitor(
+            app_bundle_id=msg.get("app_bundle_id"),
+            mic_device=msg.get("mic_device"),
+            mic_enabled=msg.get("mic_enabled", False),
+        ))
 
     elif msg_type == "stop_audio_monitor":
         stop_audio_monitor()

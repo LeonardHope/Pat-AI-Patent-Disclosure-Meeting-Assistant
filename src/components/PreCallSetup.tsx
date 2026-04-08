@@ -85,13 +85,18 @@ export function PreCallSetup({ onStartMeeting, send }: PreCallSetupProps) {
   // Start/stop audio monitoring for VU meters
   useEffect(() => {
     if (!connected) return;
-    send({
-      type: "start_audio_monitor",
-      app_bundle_id: selectedApp,
-      mic_device: selectedMic,
-      mic_enabled: micEnabled,
-    });
+    // Stop existing monitor first, wait for cleanup, then start new one
+    send({ type: "stop_audio_monitor" });
+    const timer = setTimeout(() => {
+      send({
+        type: "start_audio_monitor",
+        app_bundle_id: selectedApp,
+        mic_device: selectedMic,
+        mic_enabled: micEnabled,
+      });
+    }, 1000);
     return () => {
+      clearTimeout(timer);
       send({ type: "stop_audio_monitor" });
     };
   }, [connected, selectedApp, selectedMic, micEnabled, send]);
