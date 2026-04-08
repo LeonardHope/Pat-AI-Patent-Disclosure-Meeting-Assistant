@@ -29,7 +29,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Global state
-settings = Settings()
+settings = Settings.load()
 session = MeetingSession()
 whisper: WhisperEngine | None = None
 remote_capture: SystemAudioCapture | None = None
@@ -670,6 +670,7 @@ async def update_settings(data: dict):
         settings.suggestions = settings.suggestions.model_copy(update=data["suggestions"])
     if "audio" in data:
         settings.audio = settings.audio.model_copy(update=data["audio"])
+    settings.save()
     return settings.model_dump()
 
 

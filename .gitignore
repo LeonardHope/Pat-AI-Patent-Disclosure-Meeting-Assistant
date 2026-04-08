@@ -22,6 +22,9 @@ models/
 .env
 .env.local
 
+# Pat settings (contains no secrets — API keys in macOS Keychain)
+.pat/
+
 # macOS
 .DS_Store
 *.swp
