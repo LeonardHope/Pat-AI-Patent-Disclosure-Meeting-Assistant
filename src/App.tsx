@@ -34,6 +34,7 @@ export default function App() {
   }, [send, selectedApp, selectedMic, micEnabled]);
 
   const handleStopMeeting = useCallback(() => {
+    if (!window.confirm("End this meeting? You can still generate a summary after ending.")) return;
     send({ type: "stop_meeting" });
   }, [send]);
 
@@ -42,6 +43,7 @@ export default function App() {
   }, [send]);
 
   const handleReset = useCallback(() => {
+    if (!window.confirm("Start a new meeting? The current transcript and suggestions will be permanently discarded.")) return;
     send({ type: "reset" });
     useMeetingStore.getState().reset();
   }, [send]);
