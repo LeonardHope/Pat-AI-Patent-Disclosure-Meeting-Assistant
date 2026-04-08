@@ -309,7 +309,12 @@ export function PreCallSetup({ onStartMeeting, send }: PreCallSetupProps) {
                 </div>
               </div>
               <button
-                onClick={() => setMicEnabled(!micEnabled)}
+                onClick={() => {
+                  const newState = !micEnabled;
+                  setMicEnabled(newState);
+                  // Refresh device list when enabling mic (catches newly plugged-in devices)
+                  if (newState) loadDevices();
+                }}
                 className={`relative w-11 h-6 rounded-full transition-colors ${
                   micEnabled ? "bg-green-600" : "bg-gray-600"
                 }`}
