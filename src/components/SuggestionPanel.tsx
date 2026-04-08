@@ -3,213 +3,202 @@ import { useMeetingStore } from "../stores/meetingStore";
 import { Sparkles, FileSearch, ChevronDown, ChevronRight, X } from "lucide-react";
 import type { Suggestion } from "../types";
 
+const CATEGORY_COLORS: Record<string, string> = {
+  BACKGROUND: "text-blue-400",
+  PRIOR_ART: "text-cyan-400",
+  TECHNICAL: "text-purple-400",
+  ENABLEMENT: "text-red-400",
+  BEST_MODE: "text-amber-400",
+  ELIGIBILITY: "text-emerald-400",
+  NON_OBVIOUS: "text-orange-400",
+  SCOPE: "text-indigo-400",
+  EXAMPLES: "text-teal-400",
+};
+
+const CATEGORY_LABELS: Record<string, string> = {
+  BACKGROUND: "Background",
+  PRIOR_ART: "Prior Art",
+  TECHNICAL: "Technical",
+  ENABLEMENT: "112",
+  BEST_MODE: "Best Mode",
+  ELIGIBILITY: "101",
+  NON_OBVIOUS: "103",
+  SCOPE: "Scope",
+  EXAMPLES: "Examples",
+};
+
 interface SuggestionPanelProps {
   preCallQuestions?: { question: string; reason: string }[];
 }
 
-const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
-  "Pre-Meeting": { label: "Pre-Meeting Analysis", color: "text-purple-400 border-purple-400/30" },
-  BACKGROUND: { label: "Background", color: "text-blue-400 border-blue-400/30" },
-  PRIOR_ART: { label: "Prior Art", color: "text-cyan-400 border-cyan-400/30" },
-  TECHNICAL: { label: "Technical", color: "text-purple-400 border-purple-400/30" },
-  ENABLEMENT: { label: "Enablement (112)", color: "text-red-400 border-red-400/30" },
-  BEST_MODE: { label: "Best Mode", color: "text-amber-400 border-amber-400/30" },
-  ELIGIBILITY: { label: "Patent Eligibility (101)", color: "text-emerald-400 border-emerald-400/30" },
-  NON_OBVIOUS: { label: "Non-Obviousness (103)", color: "text-orange-400 border-orange-400/30" },
-  SCOPE: { label: "Scope & Alternatives", color: "text-indigo-400 border-indigo-400/30" },
-  EXAMPLES: { label: "Examples & Figures", color: "text-teal-400 border-teal-400/30" },
-  // Legacy
-  TECHNICAL_OVERVIEW: { label: "Technical", color: "text-purple-400 border-purple-400/30" },
-  TECHNICAL_DETAIL: { label: "Technical", color: "text-purple-400 border-purple-400/30" },
-  CLAIM_ELEMENT: { label: "Claim Elements", color: "text-purple-400 border-purple-400/30" },
-  WRITTEN_DESCRIPTION: { label: "Written Description", color: "text-orange-400 border-orange-400/30" },
-  FOLLOW_UP: { label: "Follow-up", color: "text-gray-400 border-gray-400/30" },
-};
-
-interface CategoryGroup {
-  category: string;
-  suggestions: Suggestion[];
-  isPreMeeting?: boolean;
-  collapsed?: boolean;
-}
+const TOP_COUNT = 3;
 
 export function SuggestionPanel({ preCallQuestions }: SuggestionPanelProps) {
   const suggestions = useMeetingStore((s) => s.suggestions);
   const dismissedIds = useMeetingStore((s) => s.dismissedIds);
   const dismissSuggestion = useMeetingStore((s) => s.dismissSuggestion);
   const state = useMeetingStore((s) => s.state);
-  const [groups, setGroups] = useState<CategoryGroup[]>([]);
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Build pre-meeting group
-  const preGroup: CategoryGroup | null =
-    preCallQuestions && preCallQuestions.length > 0
-      ? {
-          category: "Pre-Meeting",
-          isPreMeeting: true,
-          suggestions: preCallQuestions.map((q, i) => ({
-            id: `pre-${i}`,
-            category: "Pre-Meeting" as any,
-            priority: "HIGH" as const,
-            suggestion: q.question,
-            context: q.reason,
-            timestamp: 0,
-          })),
-        }
-      : null;
+  // Stable top 3: only changes on dismiss or when a suggestion is no longer
+  // in the LLM's output (topic was addressed)
+  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+  const [showMore, setShowMore] = useState(false);
 
-  // Accumulate suggestion groups over time
+  const activeSuggestions = suggestions.filter((s) => !dismissedIds.has(s.id));
+
   useEffect(() => {
-    if (suggestions.length === 0) return;
+    if (activeSuggestions.length === 0) return;
 
-    // Filter out dismissed suggestions, then group by category
-    const activeSuggestions = suggestions.filter((s) => !dismissedIds.has(s.id));
-    const newGroupMap: Record<string, Suggestion[]> = {};
-    for (const s of activeSuggestions) {
-      const cat = s.category || "FOLLOW_UP";
-      if (!newGroupMap[cat]) newGroupMap[cat] = [];
-      newGroupMap[cat].push(s);
-    }
+    setPinnedIds((prev) => {
+      // Keep currently pinned IDs that are still active
+      const stillActive = prev.filter(
+        (id) => activeSuggestions.some((s) => s.id === id) && !dismissedIds.has(id)
+      );
 
-    setGroups((prev) => {
-      const updated = [...prev];
-
-      for (const [cat, catSuggestions] of Object.entries(newGroupMap)) {
-        const existing = updated.find((g) => g.category === cat);
-        if (existing) {
-          // Update existing group with new suggestions
-          existing.suggestions = catSuggestions;
-        } else {
-          // New category — add it
-          updated.push({ category: cat, suggestions: catSuggestions });
+      // Fill empty slots from new suggestions (in priority order)
+      const pinned = [...stillActive];
+      for (const s of activeSuggestions) {
+        if (pinned.length >= TOP_COUNT) break;
+        if (!pinned.includes(s.id)) {
+          pinned.push(s.id);
         }
       }
 
-      return updated;
+      return pinned;
     });
+  }, [activeSuggestions.map((s) => s.id).join(","), dismissedIds]);
 
-    // Scroll to bottom when new groups appear
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-  }, [suggestions, dismissedIds]);
-
-  // Reset groups when meeting resets
+  // Reset on new meeting
   useEffect(() => {
     if (state === "idle") {
-      setGroups([]);
-      setCollapsedGroups(new Set());
+      setPinnedIds([]);
+      setShowMore(false);
     }
   }, [state]);
 
-  const toggleCollapse = (category: string) => {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(category)) next.delete(category);
-      else next.add(category);
-      return next;
-    });
-  };
+  const pinnedSuggestions = pinnedIds
+    .map((id) => activeSuggestions.find((s) => s.id === id))
+    .filter(Boolean) as Suggestion[];
 
-  // Active meeting with groups
-  if (state === "active" && (groups.length > 0 || preGroup)) {
-    const allGroups = preGroup ? [preGroup, ...groups] : groups;
+  const queuedSuggestions = activeSuggestions.filter(
+    (s) => !pinnedIds.includes(s.id)
+  );
 
+  // Show pre-meeting questions before live suggestions arrive
+  if (state === "active" && pinnedSuggestions.length === 0 && preCallQuestions && preCallQuestions.length > 0) {
     return (
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-        {allGroups.map((group) => {
-          const config = CATEGORY_LABELS[group.category] ?? {
-            label: group.category,
-            color: "text-gray-400 border-gray-400/30",
-          };
-          const isCollapsed = collapsedGroups.has(group.category);
-          const isLatest = group === allGroups[allGroups.length - 1];
-
-          return (
-            <div key={group.category}>
-              {/* Category header */}
-              <button
-                onClick={() => toggleCollapse(group.category)}
-                className={`flex items-center gap-2 w-full text-left mb-2 group`}
-              >
-                {isCollapsed ? (
-                  <ChevronRight className="w-3.5 h-3.5 text-gray-600" />
-                ) : (
-                  <ChevronDown className="w-3.5 h-3.5 text-gray-600" />
-                )}
-                <span
-                  className={`text-xs font-semibold uppercase tracking-wider ${config.color.split(" ")[0]}`}
-                >
-                  {config.label}
-                </span>
-                <span className="text-[10px] text-gray-600">
-                  {group.suggestions.length}
-                </span>
-                {!isLatest && !isCollapsed && (
-                  <span className="text-[10px] text-gray-700 ml-auto">
-                    earlier
-                  </span>
-                )}
-              </button>
-
-              {/* Suggestions */}
-              {!isCollapsed && (
-                <div
-                  className={`space-y-2 ${!isLatest ? "opacity-50" : ""}`}
-                >
-                  {group.suggestions.filter((s) => !dismissedIds.has(s.id)).map((s, i) => (
-                    <div
-                      key={s.id}
-                      className={`group/card border border-gray-700/50 rounded-lg p-3 border-l-4 ${
-                        config.color.split(" ")[1] ?? "border-l-gray-500"
-                      } transition-all hover:bg-gray-800/50 relative`}
-                    >
-                      <button
-                        onClick={() => dismissSuggestion(s.id)}
-                        className="absolute top-2 right-2 text-gray-700 hover:text-gray-400 opacity-0 group-hover/card:opacity-100 transition-opacity"
-                        title="Dismiss"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                      <p className="text-sm text-gray-200 leading-relaxed pr-5">
-                        {s.suggestion}
-                      </p>
-                      {s.context && (
-                        <p className="text-xs text-gray-500 mt-1.5 italic">
-                          {s.context}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-        <div ref={bottomRef} />
-      </div>
-    );
-  }
-
-  // Active meeting, waiting for suggestions
-  if (state === "active") {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center text-gray-500 text-sm px-6 gap-3">
-        <Sparkles className="w-8 h-8 text-gray-600 animate-pulse" />
-        <div className="text-center">
-          Listening to the conversation...
-          <br />
-          Suggestions will appear as the discussion develops.
+      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        <div className="text-xs text-gray-500 uppercase tracking-wider font-semibold">
+          From document analysis
+        </div>
+        {preCallQuestions.map((q, i) => (
+          <div key={i} className="border-l-4 border-purple-400/30 pl-4 py-2">
+            <p className="text-base text-gray-200 leading-relaxed">{q.question}</p>
+          </div>
+        ))}
+        <div className="flex items-center justify-center gap-2 text-xs text-gray-600 pt-4">
+          <Sparkles className="w-3 h-3 animate-pulse" />
+          Live suggestions will appear as the conversation develops
         </div>
       </div>
     );
   }
 
-  // Not in a meeting
+  // Active meeting with suggestions
+  if (state === "active" && pinnedSuggestions.length > 0) {
+    return (
+      <div className="flex-1 overflow-y-auto px-5 py-4">
+        {/* Top 3 — large, stable */}
+        <div className="space-y-5">
+          {pinnedSuggestions.map((s, i) => {
+            const catColor = CATEGORY_COLORS[s.category] ?? "text-gray-400";
+            const catLabel = CATEGORY_LABELS[s.category] ?? s.category;
+
+            return (
+              <div key={s.id} className="group/card relative">
+                <button
+                  onClick={() => dismissSuggestion(s.id)}
+                  className="absolute top-0 right-0 text-gray-700 hover:text-gray-400 opacity-0 group-hover/card:opacity-100 transition-opacity"
+                  title="Dismiss"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className={`text-xs font-semibold uppercase tracking-wider ${catColor}`}>
+                    {catLabel}
+                  </span>
+                </div>
+                <p className="text-base text-gray-100 leading-relaxed pr-6">
+                  {s.suggestion}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Queue — collapsed, smaller */}
+        {queuedSuggestions.length > 0 && (
+          <div className="mt-6 pt-4 border-t border-gray-800/50">
+            <button
+              onClick={() => setShowMore(!showMore)}
+              className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-400 transition-colors w-full"
+            >
+              {showMore ? (
+                <ChevronDown className="w-3 h-3" />
+              ) : (
+                <ChevronRight className="w-3 h-3" />
+              )}
+              More suggestions ({queuedSuggestions.length})
+            </button>
+
+            {showMore && (
+              <div className="mt-3 space-y-3">
+                {queuedSuggestions.map((s) => {
+                  const catColor = CATEGORY_COLORS[s.category] ?? "text-gray-400";
+                  const catLabel = CATEGORY_LABELS[s.category] ?? s.category;
+
+                  return (
+                    <div key={s.id} className="group/card relative opacity-60">
+                      <button
+                        onClick={() => dismissSuggestion(s.id)}
+                        className="absolute top-0 right-0 text-gray-700 hover:text-gray-400 opacity-0 group-hover/card:opacity-100 transition-opacity"
+                        title="Dismiss"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                      <span className={`text-[10px] font-semibold uppercase tracking-wider ${catColor}`}>
+                        {catLabel}
+                      </span>
+                      <p className="text-sm text-gray-300 leading-relaxed pr-5">
+                        {s.suggestion}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Active meeting, waiting
+  if (state === "active") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-gray-500 px-6 gap-3">
+        <Sparkles className="w-8 h-8 text-gray-600 animate-pulse" />
+        <p className="text-sm text-center">
+          Listening to the conversation...
+        </p>
+      </div>
+    );
+  }
+
+  // Idle
   return (
     <div className="flex-1 flex items-center justify-center text-gray-500 text-sm px-6 text-center">
       AI suggestions will appear here during the meeting.
-      <br />
-      Suggestions are grouped by meeting phase and accumulate over time.
     </div>
   );
 }
