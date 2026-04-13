@@ -25,6 +25,9 @@ models/
 # Pat settings (contains no secrets — API keys in macOS Keychain)
 .pat/
 
+# Local notes (not for public repo)
+ROADMAP.md
+
 # macOS
 .DS_Store
 *.swp
